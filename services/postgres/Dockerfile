@@ -22,7 +22,7 @@ RUN git clone https://github.com/pksunkara/pgx_ulid.git
 WORKDIR /tmp/pgx_ulid
 
 # Install cargo-pgrx (matching version with pgx_ulid requirements)
-RUN cargo install cargo-pgrx --version "~0.12.8" --locked
+RUN cargo install cargo-pgrx --version "0.16.0" --locked
 RUN cargo pgrx init --pg17 $(which pg_config)
 
 # Build the extension for PostgreSQL 17
