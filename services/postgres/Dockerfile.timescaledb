@@ -18,14 +18,16 @@ RUN apt-get update && apt-get install -y \
     timescaledb-2-postgresql-17 \
     && rm -rf /var/lib/apt/lists/*
 
-# Run timescaledb-tune to configure PostgreSQL
-RUN timescaledb-tune --quiet --yes
-
 # Create initialization script to enable the extension
 RUN echo "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;" > /docker-entrypoint-initdb.d/01-timescaledb.sql
 
-# Add shared_preload_libraries configuration
-RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample
+# Configure PostgreSQL for TimescaleDB
+# Note: timescaledb-tune requires a running database, so we configure manually
+RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "# TimescaleDB configuration" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_worker_processes = 32" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_parallel_workers_per_gather = 4" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_parallel_workers = 32" >> /usr/share/postgresql/postgresql.conf.sample
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \

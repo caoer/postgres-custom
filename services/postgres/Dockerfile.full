@@ -48,9 +48,6 @@ RUN apt-get update && apt-get install -y \
     timescaledb-2-postgresql-17 \
     && rm -rf /var/lib/apt/lists/*
 
-# Run timescaledb-tune to configure PostgreSQL
-RUN timescaledb-tune --quiet --yes
-
 # Copy the built ULID extension files from the builder stage
 COPY --from=builder /tmp/pgx_ulid/target/release/pgx_ulid-pg17/usr/share/postgresql/17/extension/* /usr/share/postgresql/17/extension/
 COPY --from=builder /tmp/pgx_ulid/target/release/pgx_ulid-pg17/usr/lib/postgresql/17/lib/* /usr/lib/postgresql/17/lib/
@@ -59,8 +56,13 @@ COPY --from=builder /tmp/pgx_ulid/target/release/pgx_ulid-pg17/usr/lib/postgresq
 RUN echo "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;" > /docker-entrypoint-initdb.d/01-timescaledb.sql && \
     echo "CREATE EXTENSION IF NOT EXISTS pgx_ulid;" > /docker-entrypoint-initdb.d/02-ulid.sql
 
-# Add shared_preload_libraries configuration for TimescaleDB
-RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample
+# Configure PostgreSQL for TimescaleDB
+# Note: timescaledb-tune requires a running database, so we configure manually
+RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "# TimescaleDB configuration" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_worker_processes = 32" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_parallel_workers_per_gather = 4" >> /usr/share/postgresql/postgresql.conf.sample && \
+    echo "max_parallel_workers = 32" >> /usr/share/postgresql/postgresql.conf.sample
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
