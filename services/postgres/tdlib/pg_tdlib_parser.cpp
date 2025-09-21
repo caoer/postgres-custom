@@ -35,6 +35,15 @@
     #ifdef foreach
     #undef foreach
     #endif
+    #ifdef likely
+    #undef likely
+    #endif
+    #ifdef unlikely
+    #undef unlikely
+    #endif
+    
+    // TDLib expects std types to be available
+    using namespace std;
     
     // TDLib core includes
     #include "td/utils/buffer.h"
