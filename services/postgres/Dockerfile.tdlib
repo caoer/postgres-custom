@@ -30,10 +30,9 @@ RUN rm -rf build && mkdir build && cd build && \
         -DTD_ENABLE_JNI=OFF \
         -DTD_ENABLE_DOTNET=OFF \
         .. && \
-    cmake --build . --target install -j$(nproc) && \
-    # Also build the code generators explicitly
-    cmake --build . --target tl_generate_common -j$(nproc) && \
-    cmake --build . --target generate_json -j$(nproc)
+    # Build all targets to ensure API headers are generated
+    cmake --build . -j$(nproc) && \
+    cmake --build . --target install -j$(nproc)
 # Stage 2: PostgreSQL with TDLib and extension.
 FROM postgres:17-bookworm
 
