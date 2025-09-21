@@ -22,10 +22,21 @@ on:
 env:
   REGISTRY: ghcr.io
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-tdlib:
     name: Build PostgreSQL with TDLib
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: buildjet-4vcpu-ubuntu-2204-arm
     permissions:
       contents: read
       packages: write
@@ -46,6 +57,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-tdlib
+          flavor: |
+            suffix=-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -66,10 +79,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+          provenance: false
   build-ulid:
     name: Build PostgreSQL with ULID
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: buildjet-4vcpu-ubuntu-2204-arm
     permissions:
       contents: read
       packages: write
@@ -90,6 +111,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-ulid
+          flavor: |
+            suffix=-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -110,11 +133,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+          provenance: false
 
   build-timescaledb:
     name: Build PostgreSQL with TimescaleDB
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: buildjet-4vcpu-ubuntu-2204-arm
     permissions:
       contents: read
       packages: write
@@ -135,6 +166,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-timescaledb
+          flavor: |
+            suffix=-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -155,11 +188,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+          provenance: false
 
   build-full:
     name: Build PostgreSQL with TimescaleDB + ULID
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: buildjet-4vcpu-ubuntu-2204-arm
     permissions:
       contents: read
       packages: write
@@ -180,6 +221,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-full
+          flavor: |
+            suffix=-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -200,4 +243,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+          provenance: false
