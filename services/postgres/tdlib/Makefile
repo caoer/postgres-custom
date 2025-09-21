@@ -30,7 +30,9 @@ SHLIB_LINK = -L$(TDLIB_LIB_PATH) \
 # C++ compilation flags
 override PG_CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra \
     -I$(TDLIB_INCLUDE_PATH) \
-    -I$(TDLIB_SOURCE_PATH) \
+    -I$(TDLIB_SOURCE_PATH)/tdutils \
+    -I$(TDLIB_SOURCE_PATH)/td \
+    -I$(TDLIB_SOURCE_PATH)/build \
     -DHAVE_CONFIG_H
 
 # PostgreSQL configuration

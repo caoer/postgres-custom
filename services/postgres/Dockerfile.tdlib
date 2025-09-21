@@ -70,12 +70,6 @@ COPY tdlib/pg_tdlib_parser.control ./
 COPY tdlib/pg_tdlib_parser--1.0.sql ./
 COPY tdlib/Makefile ./
 
-# Debug: Check if TDLib headers are properly copied
-RUN ls -la /tdlib/ && \
-    ls -la /tdlib/td/utils/ | head -20 && \
-    echo "Checking for buffer.h:" && \
-    find /tdlib -name "buffer.h" -type f 2>/dev/null | head -10 || echo "buffer.h not found"
-
 # Build the extension
 RUN make PG_CONFIG=/usr/bin/pg_config && \
     make install PG_CONFIG=/usr/bin/pg_config
