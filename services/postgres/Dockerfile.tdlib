@@ -54,6 +54,9 @@ RUN apt-get update && \
 # Copy TDLib from builder
 COPY --from=tdlib-builder /usr/local /usr/local
 COPY --from=tdlib-builder /tdlib/build /tdlib/build
+# Copy TDLib source headers (needed for compilation)
+COPY --from=tdlib-builder /tdlib/td /tdlib/td
+COPY --from=tdlib-builder /tdlib/tdutils /tdlib/tdutils
 
 # Configure library path
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/tdlib.conf && ldconfig

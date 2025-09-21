@@ -7,6 +7,7 @@ DATA = pg_tdlib_parser--1.0.sql
 PGFILEDESC = "pg_tdlib_parser - Full TDLib integration for parsing MTProto/Telegram data"
 
 TDLIB_INCLUDE_PATH = /usr/local/include
+TDLIB_SOURCE_PATH = /tdlib
 TDLIB_LIB_PATH = /usr/local/lib
 
 # Required TDLib libraries
@@ -29,6 +30,7 @@ SHLIB_LINK = -L$(TDLIB_LIB_PATH) \
 # C++ compilation flags
 override PG_CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra \
     -I$(TDLIB_INCLUDE_PATH) \
+    -I$(TDLIB_SOURCE_PATH) \
     -DHAVE_CONFIG_H
 
 # PostgreSQL configuration
