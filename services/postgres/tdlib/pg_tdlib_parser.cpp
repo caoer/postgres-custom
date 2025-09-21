@@ -20,6 +20,11 @@
     #endif
     }
     
+    // PostgreSQL's foreach macro conflicts with TDLib's usage
+    #ifdef foreach
+    #undef foreach
+    #endif
+    
     // Standard C++ includes
     #include <memory>
     #include <string>
