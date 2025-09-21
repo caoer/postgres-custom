@@ -1,0 +1,5 @@
+# pg_tdlib_parser extension control file
+comment = 'Parse MTProto/Telegram binary data to JSON using full TDLib integration'
+default_version = '1.0'
+module_pathname = '$libdir/pg_tdlib_parser'
+relocatable = true
