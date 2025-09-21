@@ -2,7 +2,7 @@ name: Build and Push PostgreSQL Images
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, tdlib-postgres-selfhosted ]
     paths:
       - 'services/postgres/**'
       - '.github/workflows/docker-build.yml'
@@ -29,7 +29,7 @@ concurrency:
 jobs:
   build-tdlib:
     name: Build PostgreSQL with TDLib (amd64 only)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
       packages: write
