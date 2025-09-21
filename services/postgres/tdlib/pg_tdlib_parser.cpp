@@ -28,6 +28,14 @@
     #include <unordered_map>
     #include <iomanip>
     
+    // Undefine PostgreSQL macros that conflict with TDLib
+    #ifdef LOG
+    #undef LOG
+    #endif
+    #ifdef foreach
+    #undef foreach
+    #endif
+    
     // TDLib core includes
     #include "td/utils/buffer.h"
     #include "td/utils/tl_parsers.h"
