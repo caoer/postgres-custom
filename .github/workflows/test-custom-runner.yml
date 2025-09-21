@@ -1,0 +1,38 @@
+name: Test Custom Runner
+
+on:
+  push:
+    branches: [ test-custom-runner ]
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: [self-hosted, Linux, X64]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Display system information
+      run: |
+        echo "🎉 The job was triggered by ${{ github.event_name }}"
+        echo "🔧 Running on custom runner: vphosting-16g"
+        echo "📦 Operating System: $(uname -a)"
+        echo "🏠 Working directory: $(pwd)"
+        echo "📁 Repository: ${{ github.repository }}"
+        echo "🌿 Branch: ${{ github.ref }}"
+        
+    - name: Check Docker version
+      run: docker --version || echo "Docker not installed"
+      
+    - name: Check available memory
+      run: free -h
+      
+    - name: Check disk space
+      run: df -h
+      
+    - name: List repository files
+      run: ls -la
+      
+    - name: Test complete
+      run: echo "✅ Custom runner test completed successfully!"
