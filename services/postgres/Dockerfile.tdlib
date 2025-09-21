@@ -55,10 +55,6 @@ COPY --from=tdlib-builder /usr/local /usr/local
 # Copy entire TDLib source for internal headers  
 COPY --from=tdlib-builder /tdlib /tdlib
 
-# Debug: Check what files are actually available
-RUN find /tdlib -name "telegram_api.h" -o -name "config.h" -o -name "td_api.h" | head -20 || echo "Files not found"
-RUN ls -la /tdlib/build/td/telegram/ 2>/dev/null || echo "Directory not found"
-
 # Configure library path
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/tdlib.conf && ldconfig
 
