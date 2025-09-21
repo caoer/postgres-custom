@@ -22,7 +22,7 @@ SHLIB_LINK = -L/usr/local/lib \
     -lc++ \
     -lc++abi
 
-override PG_CXXFLAGS = -std=c++14 -stdlib=libc++ -fPIC -Wall -I/usr/local/include -I/tdlib -I/tdlib/build
+override PG_CXXFLAGS = -std=c++14 -stdlib=libc++ -fPIC -Wall -I/usr/local/include -I/tdlib -I/tdlib/td -I/tdlib/build -I/tdlib/tdutils
 CXX = /usr/bin/clang++
 CC = /usr/bin/clang
 
@@ -31,4 +31,4 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 %.o : %.cpp
-	$(CXX) $(PG_CXXFLAGS) $(CPPFLAGS) -I$(includedir_server) -c -o $@ $<
+	/usr/bin/clang++ -std=c++14 -stdlib=libc++ -fPIC -Wall -I/usr/local/include $(CPPFLAGS) -I$(includedir_server) -c -o $@ $<

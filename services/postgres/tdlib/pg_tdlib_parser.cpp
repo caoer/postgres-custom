@@ -2,11 +2,21 @@
 // COMPLETE TDLib integration supporting ALL MTProto types automatically
 // This leverages TDLib's auto-generated code for all Telegram types
 
+extern "C" {
+#include "postgres.h"
+#include "fmgr.h"
+#include "utils/builtins.h"
+#include "utils/json.h"
+#include "utils/jsonb.h"
+#include "varatt.h"
+PG_MODULE_MAGIC;
+}
+
 #include <td/telegram/Client.h>
 #include <td/telegram/td_json_client.h>
 #include <td/telegram/td_api.h>
 #include <td/telegram/td_api.hpp>
-#include <td/tl/tl_json.h>
+// #include <td/tl/tl_json.h>  // This header requires internal TDLib headers
 
 #include <memory>
 #include <string>
@@ -15,11 +25,6 @@
 #include <map>
 
 extern "C" {
-#include "postgres.h"
-#include "fmgr.h"
-#include "utils/builtins.h"
-#include "utils/json.h"
-#include "catalog/pg_type.h"
 
 // ============================================================================
 // COMPLETE MTPROTO/TDLIB INTEGRATION
@@ -312,8 +317,10 @@ Datum mtproto_type_exists(PG_FUNCTION_ARGS) {
     PG_RETURN_BOOL(exists);
 }
 
+} // extern "C"
+
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (C++ only)
 // ============================================================================
 
 std::string base64_encode(const unsigned char* data, int len) {
@@ -356,5 +363,3 @@ std::string base64_encode(const unsigned char* data, int len) {
     
     return result;
 }
-
-} // extern "C"
