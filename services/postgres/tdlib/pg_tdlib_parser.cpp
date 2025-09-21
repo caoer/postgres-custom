@@ -33,13 +33,28 @@
     #undef LOG
     #endif
     #ifdef foreach
-    #undef foreach
+    #undef foreach  
     #endif
     #ifdef likely
     #undef likely
     #endif
     #ifdef unlikely
     #undef unlikely
+    #endif
+    #ifdef ERROR
+    #undef ERROR
+    #endif
+    #ifdef FATAL
+    #undef FATAL
+    #endif
+    #ifdef WARNING
+    #undef WARNING
+    #endif
+    #ifdef INFO
+    #undef INFO
+    #endif
+    #ifdef DEBUG
+    #undef DEBUG
     #endif
     
     // TDLib expects std types to be available
