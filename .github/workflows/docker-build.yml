@@ -37,6 +37,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Fix Docker permissions
+        run: |
+          # Ensure the runner user can access Docker
+          if ! docker ps >/dev/null 2>&1; then
+            echo "Fixing Docker permissions..."
+            if command -v sudo >/dev/null 2>&1; then
+              # Add user to docker group if not already
+              sudo usermod -aG docker $USER || true
+              # Restart docker service
+              sudo systemctl restart docker || true
+              # Change socket permissions temporarily
+              sudo chmod 666 /var/run/docker.sock || true
+            fi
+          fi
+          # Verify Docker access
+          docker version
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
