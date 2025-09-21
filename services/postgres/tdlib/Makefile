@@ -30,6 +30,7 @@ SHLIB_LINK = -L$(TDLIB_LIB_PATH) \
 override PG_CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra \
     -I$(TDLIB_INCLUDE_PATH) \
     -I/tdlib \
+    -I/tdlib/tdutils \
     -I/tdlib/td \
     -I/tdlib/build \
     -DHAVE_CONFIG_H
