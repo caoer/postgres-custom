@@ -1,34 +1,49 @@
-# Makefile for pg_tdlib_parser inside Docker
+# Makefile for pg_tdlib_parser PostgreSQL extension
 MODULE_big = pg_tdlib_parser
 OBJS = pg_tdlib_parser.o
 
 EXTENSION = pg_tdlib_parser
 DATA = pg_tdlib_parser--1.0.sql
-PGFILEDESC = "pg_tdlib_parser - Full TDLib integration"
+PGFILEDESC = "pg_tdlib_parser - Full TDLib integration for parsing MTProto/Telegram data"
 
-# Link against installed TDLib
-SHLIB_LINK = -L/usr/local/lib \
+TDLIB_INCLUDE_PATH = /usr/local/include
+TDLIB_LIB_PATH = /usr/local/lib
+
+# Required TDLib libraries
+SHLIB_LINK = -L$(TDLIB_LIB_PATH) \
+    -ltdapi \
+    -ltdclient \
     -ltdcore \
     -ltddb \
     -ltdactor \
     -ltdutils \
     -ltdnet \
-    -ltdapi \
+    -ltdsqlite \
     -lssl \
     -lcrypto \
     -lz \
     -ldl \
     -lpthread \
-    -lc++ \
-    -lc++abi
+    -lstdc++
 
-override PG_CXXFLAGS = -std=c++14 -stdlib=libc++ -fPIC -Wall -I/usr/local/include -I/tdlib -I/tdlib/td -I/tdlib/build -I/tdlib/tdutils
-CXX = /usr/bin/clang++
-CC = /usr/bin/clang
+# C++ compilation flags
+override PG_CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra \
+    -I$(TDLIB_INCLUDE_PATH) \
+    -DHAVE_CONFIG_H
 
-PG_CONFIG = pg_config
+# PostgreSQL configuration
+PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
+# Override to use C++ compiler
 %.o : %.cpp
-	/usr/bin/clang++ -std=c++14 -stdlib=libc++ -fPIC -Wall -I/usr/local/include $(CPPFLAGS) -I$(includedir_server) -c -o $@ $<
+	$(CXX) $(PG_CXXFLAGS) $(CPPFLAGS) -I$(includedir_server) -c -o $@ $<
+
+# Clean rule
+clean:
+	rm -f $(OBJS) $(MODULE_big).so
+
+# Install rule handled by PGXS
+
+.PHONY: clean

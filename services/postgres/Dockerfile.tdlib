@@ -21,14 +21,19 @@ RUN apt-get update && \
 WORKDIR /tdlib
 
 RUN git clone https://github.com/tdlib/td.git --depth 1 /tdlib
-# Build TDLib with clang and libc++
-RUN rm -rf build && \
-    mkdir build && \
-    cd build && \
+# Build TDLib with all components
+RUN rm -rf build && mkdir build && cd build && \
     CXXFLAGS="-stdlib=libc++" CC=/usr/bin/clang CXX=/usr/bin/clang++ \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
-    cmake --build . --target install
-
+    cmake \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DTD_ENABLE_JNI=OFF \
+        -DTD_ENABLE_DOTNET=OFF \
+        .. && \
+    cmake --build . --target install -j$(nproc) && \
+    # Also build the code generators explicitly
+    cmake --build . --target tl_generate_common -j$(nproc) && \
+    cmake --build . --target generate_json -j$(nproc)
 # Stage 2: PostgreSQL with TDLib and extension.
 FROM postgres:17-bookworm
 
@@ -48,7 +53,7 @@ RUN apt-get update && \
 
 # Copy TDLib from builder
 COPY --from=tdlib-builder /usr/local /usr/local
-COPY --from=tdlib-builder /tdlib /tdlib
+COPY --from=tdlib-builder /tdlib/build /tdlib/build
 
 # Configure library path
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/tdlib.conf && ldconfig
@@ -62,9 +67,7 @@ COPY tdlib/pg_tdlib_parser.control ./
 COPY tdlib/pg_tdlib_parser--1.0.sql ./
 COPY tdlib/Makefile ./
 
-ENV CPPFLAGS="-I/usr/local/include -I/tdlib"
-ENV LDFLAGS="-L/usr/local/lib -Wl,-rpath,/usr/local/lib"
-# # Build the extension
+# Build the extension
 RUN make PG_CONFIG=/usr/bin/pg_config && \
     make install PG_CONFIG=/usr/bin/pg_config
 

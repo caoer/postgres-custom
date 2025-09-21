@@ -1,365 +1,664 @@
-// mtproto_complete_tdlib.cpp
-// COMPLETE TDLib integration supporting ALL MTProto types automatically
-// This leverages TDLib's auto-generated code for all Telegram types
+/*
+ * pg_tdlib_parser.cpp - PostgreSQL extension for parsing MTProto/Telegram binary data
+ * Full TDLib integration with support for ALL telegram_api and td_api types
+ */
 
-extern "C" {
-#include "postgres.h"
-#include "fmgr.h"
-#include "utils/builtins.h"
-#include "utils/json.h"
-#include "utils/jsonb.h"
-#include "varatt.h"
-PG_MODULE_MAGIC;
-}
-
-#include <td/telegram/Client.h>
-#include <td/telegram/td_json_client.h>
-#include <td/telegram/td_api.h>
-#include <td/telegram/td_api.hpp>
-// #include <td/tl/tl_json.h>  // This header requires internal TDLib headers
-
-#include <memory>
-#include <string>
-#include <cstring>
-#include <mutex>
-#include <map>
-
-extern "C" {
-
-// ============================================================================
-// COMPLETE MTPROTO/TDLIB INTEGRATION
-// ============================================================================
-
-struct PGMTProto {
-    void* json_client;           // TDLib JSON client for universal type support
-    std::mutex* client_mutex;     // Thread safety
-    bool initialized;
-};
-
-// Global context
-static PGMTProto* g_context = nullptr;
-
-// Initialize TDLib with full type support
-void* pg_mtproto_init(void) {
-    if (g_context) {
-        return g_context;
+ extern "C" {
+    #include "postgres.h"
+    #include "fmgr.h"
+    #include "utils/builtins.h"
+    #include "utils/jsonb.h"
+    #include "utils/json.h"
+    #include "catalog/pg_type.h"
+    #include "libpq/pqformat.h"
+    #include "funcapi.h"
+    #include "utils/timestamp.h"
+    #include "utils/lsyscache.h"
+    
+    #ifdef PG_MODULE_MAGIC
+    PG_MODULE_MAGIC;
+    #endif
     }
     
-    g_context = (PGMTProto*)malloc(sizeof(PGMTProto));
+    // Standard C++ includes
+    #include <memory>
+    #include <string>
+    #include <sstream>
+    #include <vector>
+    #include <unordered_map>
+    #include <iomanip>
     
-    // Create TDLib JSON client - this automatically supports ALL TDLib types
-    g_context->json_client = td_json_client_create();
-    g_context->client_mutex = new std::mutex();
-    g_context->initialized = true;
+    // TDLib core includes
+    #include "td/utils/buffer.h"
+    #include "td/utils/tl_parsers.h"
+    #include "td/utils/JsonBuilder.h"
+    #include "td/utils/base64.h"
+    #include "td/utils/Slice.h"
+    #include "td/utils/StringBuilder.h"
+    #include "td/utils/logging.h"
+    #include "td/utils/format.h"
+    #include "td/utils/misc.h"
+    #include "td/utils/Status.h"
     
-    // Set TDLib log level
-    td_set_log_verbosity_level(2);
+    // TL JSON conversion
+    #include "td/tl/tl_json.h"
     
-    // Initialize TDLib parameters
-    const char* init_params = R"({
-        "@type": "setTdlibParameters",
-        "parameters": {
-            "use_test_dc": false,
-            "database_directory": "/tmp/tdlib_pg",
-            "files_directory": "/tmp/tdlib_pg_files",
-            "use_file_database": false,
-            "use_chat_info_database": false,
-            "use_message_database": false,
-            "use_secret_chats": false,
-            "api_id": 0,
-            "api_hash": "",
-            "system_language_code": "en",
-            "device_model": "PostgreSQL",
-            "application_version": "1.0.0",
-            "enable_storage_optimizer": false
+    // Generated TL API headers - these contain ALL the types
+    #include "td/telegram/telegram_api.h"
+    #include "td/telegram/td_api.h"
+    #include "td/mtproto/mtproto_api.h"
+    #include "td/telegram/secret_api.h"
+    
+    // For gzip decompression
+    #include <zlib.h>
+    
+    extern "C" {
+    
+    /* Function declarations */
+    Datum tdlib_parse_telegram_api(PG_FUNCTION_ARGS);
+    Datum tdlib_parse_td_api(PG_FUNCTION_ARGS);
+    Datum tdlib_parse_mtproto_api(PG_FUNCTION_ARGS);
+    Datum tdlib_parse_hex(PG_FUNCTION_ARGS);
+    Datum tdlib_parse_hex_with_schema(PG_FUNCTION_ARGS);
+    Datum tdlib_identify_constructor(PG_FUNCTION_ARGS);
+    Datum tdlib_parse_auto(PG_FUNCTION_ARGS);
+    Datum tdlib_list_telegram_constructors(PG_FUNCTION_ARGS);
+    Datum tdlib_version(PG_FUNCTION_ARGS);
+    
+    PG_FUNCTION_INFO_V1(tdlib_parse_telegram_api);
+    PG_FUNCTION_INFO_V1(tdlib_parse_td_api);
+    PG_FUNCTION_INFO_V1(tdlib_parse_mtproto_api);
+    PG_FUNCTION_INFO_V1(tdlib_parse_hex);
+    PG_FUNCTION_INFO_V1(tdlib_parse_hex_with_schema);
+    PG_FUNCTION_INFO_V1(tdlib_identify_constructor);
+    PG_FUNCTION_INFO_V1(tdlib_parse_auto);
+    PG_FUNCTION_INFO_V1(tdlib_list_telegram_constructors);
+    PG_FUNCTION_INFO_V1(tdlib_version);
+    
+    /*
+     * Decompress gzip data
+     */
+    static std::string decompress_gzip(const unsigned char *data, size_t size) {
+        z_stream stream = {};
+        stream.next_in = const_cast<unsigned char*>(data);
+        stream.avail_in = size;
+    
+        if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
+            return "";
         }
-    })";
     
-    td_json_client_execute(g_context->json_client, init_params);
+        std::string result;
+        char buffer[4096];
     
-    return g_context;
-}
-
-// Cleanup
-void pg_mtproto_cleanup(void* context) {
-    PGMTProto* ctx = (PGMTProto*)context;
-    if (ctx) {
-        if (ctx->json_client) {
-            td_json_client_destroy(ctx->json_client);
+        do {
+            stream.next_out = reinterpret_cast<unsigned char*>(buffer);
+            stream.avail_out = sizeof(buffer);
+    
+            int ret = inflate(&stream, Z_NO_FLUSH);
+            if (ret != Z_OK && ret != Z_STREAM_END) {
+                inflateEnd(&stream);
+                return "";
+            }
+    
+            result.append(buffer, sizeof(buffer) - stream.avail_out);
+    
+            if (ret == Z_STREAM_END) {
+                break;
+            }
+        } while (stream.avail_out == 0);
+    
+        inflateEnd(&stream);
+        return result;
+    }
+    
+    /*
+     * Core parsing function that handles any telegram_api object
+     */
+    static std::string parse_telegram_api_to_json(const unsigned char *data, size_t size, bool auto_decompress = true) {
+        try {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+    
+            // Try to parse as telegram_api object
+            auto object = td::telegram_api::Object::fetch(parser);
+    
+            if (parser.get_error()) {
+                // If parsing failed, check if it might be gzip_packed
+                if (size >= 4 && auto_decompress) {
+                    td::int32 constructor_id = *reinterpret_cast<const td::int32*>(data);
+                    if (constructor_id == 0x3072cfa1) { // gzip_packed
+                        // Skip constructor id and parse string with gzipped data
+                        td::TlBufferParser gzip_parser(td::Slice(reinterpret_cast<const char*>(data + 4), size - 4));
+                        auto gzipped = gzip_parser.fetch_string<std::string>();
+    
+                        if (!gzip_parser.get_error() && !gzipped.empty()) {
+                            // Decompress and recursively parse
+                            auto decompressed = decompress_gzip(
+                                reinterpret_cast<const unsigned char*>(gzipped.data()),
+                                gzipped.size()
+                            );
+    
+                            if (!decompressed.empty()) {
+                                return parse_telegram_api_to_json(
+                                    reinterpret_cast<const unsigned char*>(decompressed.data()),
+                                    decompressed.size(),
+                                    false // Don't recurse on decompression
+                                );
+                            }
+                        }
+                    }
+                }
+    
+                // Return error with hex dump of data
+                td::JsonBuilder json;
+                auto obj = json.enter_object();
+                obj("@type", "parse_error");
+                obj("error", parser.get_error());
+                obj("error_pos", static_cast<td::int64>(parser.get_error_pos()));
+                obj("data_size", static_cast<td::int64>(size));
+                if (size > 0) {
+                    size_t preview_len = std::min(size, size_t(64));
+                    obj("data_preview", td::base64_encode(td::Slice(reinterpret_cast<const char*>(data), preview_len)));
+                }
+                return json.string_builder().as_cslice().str();
+            }
+    
+            // Convert to JSON using TDLib's built-in JSON converter
+            td::JsonBuilder json;
+            td::to_json(json, object);
+            return json.string_builder().as_cslice().str();
+    
+        } catch (const std::exception &e) {
+            td::JsonBuilder json;
+            auto obj = json.enter_object();
+            obj("@type", "exception");
+            obj("message", e.what());
+            return json.string_builder().as_cslice().str();
         }
-        if (ctx->client_mutex) {
-            delete ctx->client_mutex;
+    }
+    
+    /*
+     * Parse td_api objects
+     */
+    static std::string parse_td_api_to_json(const unsigned char *data, size_t size) {
+        try {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+    
+            // Try to parse as td_api object
+            auto object = td::td_api::Object::fetch(parser);
+    
+            if (parser.get_error()) {
+                td::JsonBuilder json;
+                auto obj = json.enter_object();
+                obj("@type", "parse_error");
+                obj("error", parser.get_error());
+                obj("error_pos", static_cast<td::int64>(parser.get_error_pos()));
+                return json.string_builder().as_cslice().str();
+            }
+    
+            // Convert to JSON
+            td::JsonBuilder json;
+            td::to_json(json, object);
+            return json.string_builder().as_cslice().str();
+    
+        } catch (const std::exception &e) {
+            td::JsonBuilder json;
+            auto obj = json.enter_object();
+            obj("@type", "exception");
+            obj("message", e.what());
+            return json.string_builder().as_cslice().str();
         }
-        free(ctx);
-    }
-    g_context = nullptr;
-}
-
-// ============================================================================
-// UNIVERSAL SERIALIZATION - Supports ALL TDLib/MTProto types automatically
-// ============================================================================
-
-// Serialize ANY TDLib type from JSON to binary MTProto format
-unsigned char* pg_mtproto_serialize_universal(
-    const char* json_input,
-    int* out_len,
-    char** error_msg
-) {
-    if (!g_context || !g_context->initialized) {
-        if (error_msg) *error_msg = strdup("MTProto not initialized");
-        return nullptr;
     }
     
-    std::lock_guard<std::mutex> lock(*g_context->client_mutex);
+    /*
+     * Parse mtproto_api objects
+     */
+    static std::string parse_mtproto_api_to_json(const unsigned char *data, size_t size) {
+        try {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
     
-    // TDLib automatically handles ALL types through its JSON interface
-    // The @type field in JSON determines which MTProto type to serialize
+            // Try to parse as mtproto_api object
+            auto object = td::mtproto_api::Object::fetch(parser);
     
-    // Execute serialization request synchronously
-    const char* result = td_json_client_execute(
-        g_context->json_client,
-        json_input
-    );
+            if (parser.get_error()) {
+                td::JsonBuilder json;
+                auto obj = json.enter_object();
+                obj("@type", "parse_error");
+                obj("error", parser.get_error());
+                obj("error_pos", static_cast<td::int64>(parser.get_error_pos()));
+                return json.string_builder().as_cslice().str();
+            }
     
-    if (!result) {
-        if (error_msg) *error_msg = strdup("Serialization failed");
-        return nullptr;
+            // Convert to JSON
+            td::JsonBuilder json;
+            td::to_json(json, object);
+            return json.string_builder().as_cslice().str();
+    
+        } catch (const std::exception &e) {
+            td::JsonBuilder json;
+            auto obj = json.enter_object();
+            obj("@type", "exception");
+            obj("message", e.what());
+            return json.string_builder().as_cslice().str();
+        }
     }
     
-    // Parse the result to extract binary data
-    // TDLib returns base64-encoded binary for serialization requests
-    std::string result_str(result);
+    /*
+     * Auto-detect schema and parse
+     */
+    static std::string parse_auto_to_json(const unsigned char *data, size_t size) {
+        // Try each schema in order of likelihood
     
-    // For actual binary serialization, we need to use TDLib's internal methods
-    // This is a simplified version - real implementation would use td::td_api objects
+        // 1. Try telegram_api (most common)
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::telegram_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                td::JsonBuilder json;
+                auto wrapper = json.enter_object();
+                wrapper("@schema", "telegram_api");
+                wrapper("data", [&](auto &jv) {
+                    td::to_json(jv, object);
+                });
+                return json.string_builder().as_cslice().str();
+            }
+        }
     
-    *out_len = result_str.length();
-    unsigned char* output = (unsigned char*)malloc(*out_len);
-    memcpy(output, result_str.c_str(), *out_len);
+        // 2. Try td_api
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::td_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                td::JsonBuilder json;
+                auto wrapper = json.enter_object();
+                wrapper("@schema", "td_api");
+                wrapper("data", [&](auto &jv) {
+                    td::to_json(jv, object);
+                });
+                return json.string_builder().as_cslice().str();
+            }
+        }
     
-    return output;
-}
-
-// Deserialize ANY MTProto binary to JSON 
-char* pg_mtproto_deserialize_universal(
-    const unsigned char* binary_data,
-    int data_len,
-    char** error_msg
-) {
-    if (!g_context || !g_context->initialized) {
-        if (error_msg) *error_msg = strdup("MTProto not initialized");
-        return nullptr;
+        // 3. Try mtproto_api
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::mtproto_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                td::JsonBuilder json;
+                auto wrapper = json.enter_object();
+                wrapper("@schema", "mtproto_api");
+                wrapper("data", [&](auto &jv) {
+                    td::to_json(jv, object);
+                });
+                return json.string_builder().as_cslice().str();
+            }
+        }
+    
+        // If all fail, return error with constructor ID
+        td::JsonBuilder json;
+        auto obj = json.enter_object();
+        obj("@type", "unknown_schema");
+        if (size >= 4) {
+            td::int32 constructor_id = *reinterpret_cast<const td::int32*>(data);
+            obj("constructor_id", td::format::as_hex(constructor_id));
+        }
+        obj("data_size", static_cast<td::int64>(size));
+        if (size > 0) {
+            size_t preview_len = std::min(size, size_t(32));
+            obj("data_preview", td::base64_encode(td::Slice(reinterpret_cast<const char*>(data), preview_len)));
+        }
+        return json.string_builder().as_cslice().str();
     }
     
-    std::lock_guard<std::mutex> lock(*g_context->client_mutex);
+    /*
+     * tdlib_parse_telegram_api - Parse telegram_api binary to JSON
+     */
+    Datum
+    tdlib_parse_telegram_api(PG_FUNCTION_ARGS)
+    {
+        bytea *input = PG_GETARG_BYTEA_PP(0);
+        unsigned char *data = (unsigned char *)VARDATA_ANY(input);
+        size_t size = VARSIZE_ANY_EXHDR(input);
     
-    // Create a deserialization request
-    // TDLib will automatically detect the type from the binary data
-    char request[4096];
+        std::string json = parse_telegram_api_to_json(data, size);
     
-    // Convert binary to base64 for JSON transport
-    std::string base64_data = base64_encode(binary_data, data_len);
-    
-    snprintf(request, sizeof(request),
-        R"({
-            "@type": "deserializeBinary",
-            "data": "%s"
-        })",
-        base64_data.c_str()
-    );
-    
-    const char* result = td_json_client_execute(
-        g_context->json_client,
-        request
-    );
-    
-    if (!result) {
-        if (error_msg) *error_msg = strdup("Deserialization failed");
-        return nullptr;
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
     }
     
-    return strdup(result);
-}
-
-// ============================================================================
-// TYPE DISCOVERY - Get information about available types
-// ============================================================================
-
-// Get all available TDLib types
-char* pg_mtproto_get_all_types(void) {
-    // TDLib has 1000+ auto-generated types
-    // This returns a JSON array of all available @type values
+    /*
+     * tdlib_parse_td_api - Parse td_api binary to JSON
+     */
+    Datum
+    tdlib_parse_td_api(PG_FUNCTION_ARGS)
+    {
+        bytea *input = PG_GETARG_BYTEA_PP(0);
+        unsigned char *data = (unsigned char *)VARDATA_ANY(input);
+        size_t size = VARSIZE_ANY_EXHDR(input);
     
-    const char* type_query = R"({
-        "@type": "getAvailableTypes"
-    })";
+        std::string json = parse_td_api_to_json(data, size);
     
-    const char* result = td_json_client_execute(
-        g_context->json_client,
-        type_query
-    );
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
+    }
     
-    return result ? strdup(result) : strdup("[]");
-}
-
-// Validate if a type exists
-bool pg_mtproto_type_exists(const char* type_name) {
-    char query[512];
-    snprintf(query, sizeof(query),
-        R"({
-            "@type": "validateType",
-            "type_name": "%s"
-        })",
-        type_name
-    );
+    /*
+     * tdlib_parse_mtproto_api - Parse mtproto_api binary to JSON
+     */
+    Datum
+    tdlib_parse_mtproto_api(PG_FUNCTION_ARGS)
+    {
+        bytea *input = PG_GETARG_BYTEA_PP(0);
+        unsigned char *data = (unsigned char *)VARDATA_ANY(input);
+        size_t size = VARSIZE_ANY_EXHDR(input);
     
-    const char* result = td_json_client_execute(
-        g_context->json_client,
-        query
-    );
+        std::string json = parse_mtproto_api_to_json(data, size);
     
-    return result && strstr(result, "\"@type\":\"ok\"");
-}
-
-// ============================================================================
-// POSTGRESQL FUNCTIONS
-// ============================================================================
-
-PG_MODULE_MAGIC;
-
-// Module initialization
-void _PG_init(void) {
-    pg_mtproto_init();
-}
-
-void _PG_fini(void) {
-    pg_mtproto_cleanup(g_context);
-}
-
-// Universal serialization function - works with ANY TDLib type
-PG_FUNCTION_INFO_V1(mtproto_serialize_any);
-Datum mtproto_serialize_any(PG_FUNCTION_ARGS) {
-    text* json_text = PG_GETARG_TEXT_PP(0);
-    char* json_str = text_to_cstring(json_text);
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
+    }
     
-    int result_len = 0;
-    char* error_msg = nullptr;
+    /*
+     * tdlib_parse_auto - Auto-detect schema and parse
+     */
+    Datum
+    tdlib_parse_auto(PG_FUNCTION_ARGS)
+    {
+        bytea *input = PG_GETARG_BYTEA_PP(0);
+        unsigned char *data = (unsigned char *)VARDATA_ANY(input);
+        size_t size = VARSIZE_ANY_EXHDR(input);
     
-    unsigned char* serialized = pg_mtproto_serialize_universal(
-        json_str, &result_len, &error_msg
-    );
+        std::string json = parse_auto_to_json(data, size);
     
-    pfree(json_str);
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
+    }
     
-    if (!serialized) {
-        if (error_msg) {
+    /*
+     * tdlib_parse_hex - Parse hex string as telegram_api (default)
+     */
+    Datum
+    tdlib_parse_hex(PG_FUNCTION_ARGS)
+    {
+        text *hex_input = PG_GETARG_TEXT_PP(0);
+        char *hex_str = text_to_cstring(hex_input);
+        size_t hex_len = strlen(hex_str);
+    
+        // Validate hex string
+        if (hex_len % 2 != 0) {
             ereport(ERROR,
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("Serialization failed: %s", error_msg)));
-            free(error_msg);
+                    (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                     errmsg("Hex string must have even length")));
         }
-        PG_RETURN_NULL();
+    
+        // Convert hex to binary
+        size_t binary_size = hex_len / 2;
+        std::unique_ptr<unsigned char[]> binary_data(new unsigned char[binary_size]);
+    
+        for (size_t i = 0; i < binary_size; i++) {
+            unsigned int byte;
+            if (sscanf(hex_str + i * 2, "%2x", &byte) != 1) {
+                ereport(ERROR,
+                        (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                         errmsg("Invalid hex string at position %zu", i * 2)));
+            }
+            binary_data[i] = static_cast<unsigned char>(byte);
+        }
+    
+        // Auto-detect and parse
+        std::string json = parse_auto_to_json(binary_data.get(), binary_size);
+    
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
     }
     
-    bytea* result = (bytea*)palloc(VARHDRSZ + result_len);
-    SET_VARSIZE(result, VARHDRSZ + result_len);
-    memcpy(VARDATA(result), serialized, result_len);
+    /*
+     * tdlib_parse_hex_with_schema - Parse hex with specified schema
+     */
+    Datum
+    tdlib_parse_hex_with_schema(PG_FUNCTION_ARGS)
+    {
+        text *hex_input = PG_GETARG_TEXT_PP(0);
+        text *schema_input = PG_GETARG_TEXT_PP(1);
     
-    free(serialized);
-    PG_RETURN_BYTEA_P(result);
-}
-
-// Universal deserialization - automatically detects type
-PG_FUNCTION_INFO_V1(mtproto_deserialize_any);
-Datum mtproto_deserialize_any(PG_FUNCTION_ARGS) {
-    bytea* data = PG_GETARG_BYTEA_PP(0);
-    int len = VARSIZE_ANY_EXHDR(data);
+        char *hex_str = text_to_cstring(hex_input);
+        char *schema_str = text_to_cstring(schema_input);
+        size_t hex_len = strlen(hex_str);
     
-    char* error_msg = nullptr;
-    char* json_result = pg_mtproto_deserialize_universal(
-        (unsigned char*)VARDATA_ANY(data), len, &error_msg
-    );
-    
-    if (!json_result) {
-        if (error_msg) {
+        // Validate hex string
+        if (hex_len % 2 != 0) {
             ereport(ERROR,
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("Deserialization failed: %s", error_msg)));
-            free(error_msg);
+                    (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                     errmsg("Hex string must have even length")));
         }
-        PG_RETURN_NULL();
-    }
     
-    text* result = cstring_to_text(json_result);
-    free(json_result);
+        // Convert hex to binary
+        size_t binary_size = hex_len / 2;
+        std::unique_ptr<unsigned char[]> binary_data(new unsigned char[binary_size]);
     
-    PG_RETURN_TEXT_P(result);
-}
-
-// Get all supported types
-PG_FUNCTION_INFO_V1(mtproto_list_types);
-Datum mtproto_list_types(PG_FUNCTION_ARGS) {
-    char* types_json = pg_mtproto_get_all_types();
-    text* result = cstring_to_text(types_json);
-    free(types_json);
-    PG_RETURN_TEXT_P(result);
-}
-
-// Check if type is supported
-PG_FUNCTION_INFO_V1(mtproto_type_exists);
-Datum mtproto_type_exists(PG_FUNCTION_ARGS) {
-    text* type_text = PG_GETARG_TEXT_PP(0);
-    char* type_name = text_to_cstring(type_text);
-    
-    bool exists = pg_mtproto_type_exists(type_name);
-    
-    pfree(type_name);
-    PG_RETURN_BOOL(exists);
-}
-
-} // extern "C"
-
-// ============================================================================
-// HELPER FUNCTIONS (C++ only)
-// ============================================================================
-
-std::string base64_encode(const unsigned char* data, int len) {
-    static const char* base64_chars = 
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    
-    std::string result;
-    int i = 0;
-    unsigned char char_array_3[3];
-    unsigned char char_array_4[4];
-    
-    while (len--) {
-        char_array_3[i++] = *(data++);
-        if (i == 3) {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-            
-            for (i = 0; i < 4; i++)
-                result += base64_chars[char_array_4[i]];
-            i = 0;
+        for (size_t i = 0; i < binary_size; i++) {
+            unsigned int byte;
+            if (sscanf(hex_str + i * 2, "%2x", &byte) != 1) {
+                ereport(ERROR,
+                        (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                         errmsg("Invalid hex string at position %zu", i * 2)));
+            }
+            binary_data[i] = static_cast<unsigned char>(byte);
         }
+    
+        // Parse based on schema
+        std::string json;
+        if (strcmp(schema_str, "telegram_api") == 0) {
+            json = parse_telegram_api_to_json(binary_data.get(), binary_size);
+        } else if (strcmp(schema_str, "td_api") == 0) {
+            json = parse_td_api_to_json(binary_data.get(), binary_size);
+        } else if (strcmp(schema_str, "mtproto_api") == 0) {
+            json = parse_mtproto_api_to_json(binary_data.get(), binary_size);
+        } else if (strcmp(schema_str, "auto") == 0) {
+            json = parse_auto_to_json(binary_data.get(), binary_size);
+        } else {
+            ereport(ERROR,
+                    (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                     errmsg("Invalid schema: %s. Must be one of: telegram_api, td_api, mtproto_api, auto", schema_str)));
+        }
+    
+        // Convert to PostgreSQL JSONB
+        Datum json_datum = CStringGetDatum(json.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
     }
     
-    if (i) {
-        for (int j = i; j < 3; j++)
-            char_array_3[j] = '\0';
-        
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-        
-        for (int j = 0; j < i + 1; j++)
-            result += base64_chars[char_array_4[j]];
-        
-        while (i++ < 3)
-            result += '=';
+    /*
+     * tdlib_identify_constructor - Identify constructor from binary data
+     */
+    Datum
+    tdlib_identify_constructor(PG_FUNCTION_ARGS)
+    {
+        bytea *input = PG_GETARG_BYTEA_PP(0);
+        unsigned char *data = (unsigned char *)VARDATA_ANY(input);
+        size_t size = VARSIZE_ANY_EXHDR(input);
+    
+        if (size < 4) {
+            PG_RETURN_TEXT_P(cstring_to_text("Data too short (< 4 bytes)"));
+        }
+    
+        td::int32 constructor_id = *reinterpret_cast<td::int32*>(data);
+    
+        // Try to identify the constructor in each schema
+        std::string result;
+    
+        // Check telegram_api
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::telegram_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                // Get the type name from the object
+                td::JsonBuilder json;
+                td::to_json(json, object);
+                auto json_str = json.string_builder().as_cslice().str();
+    
+                // Parse JSON to get @type
+                size_t type_pos = json_str.find("\"@type\":\"");
+                if (type_pos != std::string::npos) {
+                    type_pos += 9;
+                    size_t end_pos = json_str.find("\"", type_pos);
+                    if (end_pos != std::string::npos) {
+                        std::string type_name = json_str.substr(type_pos, end_pos - type_pos);
+                        char buf[256];
+                        snprintf(buf, sizeof(buf), "telegram_api::%s (0x%08x)", type_name.c_str(), constructor_id);
+                        PG_RETURN_TEXT_P(cstring_to_text(buf));
+                    }
+                }
+            }
+        }
+    
+        // Check td_api
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::td_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                td::JsonBuilder json;
+                td::to_json(json, object);
+                auto json_str = json.string_builder().as_cslice().str();
+    
+                size_t type_pos = json_str.find("\"@type\":\"");
+                if (type_pos != std::string::npos) {
+                    type_pos += 9;
+                    size_t end_pos = json_str.find("\"", type_pos);
+                    if (end_pos != std::string::npos) {
+                        std::string type_name = json_str.substr(type_pos, end_pos - type_pos);
+                        char buf[256];
+                        snprintf(buf, sizeof(buf), "td_api::%s (0x%08x)", type_name.c_str(), constructor_id);
+                        PG_RETURN_TEXT_P(cstring_to_text(buf));
+                    }
+                }
+            }
+        }
+    
+        // Check mtproto_api
+        {
+            td::TlBufferParser parser(td::Slice(reinterpret_cast<const char*>(data), size));
+            auto object = td::mtproto_api::Object::fetch(parser);
+            if (!parser.get_error()) {
+                td::JsonBuilder json;
+                td::to_json(json, object);
+                auto json_str = json.string_builder().as_cslice().str();
+    
+                size_t type_pos = json_str.find("\"@type\":\"");
+                if (type_pos != std::string::npos) {
+                    type_pos += 9;
+                    size_t end_pos = json_str.find("\"", type_pos);
+                    if (end_pos != std::string::npos) {
+                        std::string type_name = json_str.substr(type_pos, end_pos - type_pos);
+                        char buf[256];
+                        snprintf(buf, sizeof(buf), "mtproto_api::%s (0x%08x)", type_name.c_str(), constructor_id);
+                        PG_RETURN_TEXT_P(cstring_to_text(buf));
+                    }
+                }
+            }
+        }
+    
+        // Unknown constructor
+        char buf[256];
+        snprintf(buf, sizeof(buf), "unknown (0x%08x)", constructor_id);
+        PG_RETURN_TEXT_P(cstring_to_text(buf));
     }
     
-    return result;
-}
+    /*
+     * tdlib_list_telegram_constructors - List some common telegram_api constructors
+     */
+    Datum
+    tdlib_list_telegram_constructors(PG_FUNCTION_ARGS)
+    {
+        std::ostringstream result;
+        result << "Common telegram_api constructors (subset):\n\n";
+    
+        result << "User/Chat types:\n";
+        result << "  0x50ab6179 - userEmpty\n";
+        result << "  0x020b1422 - user\n";
+        result << "  0x3e11acec - userProfilePhotoEmpty\n";
+        result << "  0x80f50a21 - userProfilePhoto\n";
+        result << "  0x09db1bc6 - userStatusEmpty\n";
+        result << "  0x066afa37 - userStatusOnline\n";
+        result << "  0x008c703f - userStatusOffline\n";
+        result << "  0x29fccb83 - chatEmpty\n";
+        result << "  0xc69f59e1 - chat\n";
+        result << "  0xab65ea03 - chatForbidden\n";
+        result << "  0x7bff875a - channel\n";
+        result << "  0xc7d38976 - channelForbidden\n\n";
+    
+        result << "Message types:\n";
+        result << "  0x83e5de54 - messageEmpty\n";
+        result << "  0xe1ba5797 - message\n";
+        result << "  0xbe7e8ef3 - messageService\n\n";
+    
+        result << "Media types:\n";
+        result << "  0x3ded6320 - messageMediaEmpty\n";
+        result << "  0x695b0f8f - messageMediaPhoto\n";
+        result << "  0x56e0d474 - messageMediaGeo\n";
+        result << "  0xb8c12661 - messageMediaContact\n";
+        result << "  0xc52d939d - messageMediaDocument\n\n";
+    
+        result << "Update types:\n";
+        result << "  0x1f2b3476 - updateNewMessage\n";
+        result << "  0x62ba04d9 - updateMessageID\n";
+        result << "  0xd17f3a90 - updateDeleteMessages\n";
+        result << "  0xb67cb1ed - updateUserTyping\n";
+        result << "  0x40f04453 - updateChatUserTyping\n";
+        result << "  0x55f65e94 - updateChatParticipants\n";
+        result << "  0x07761198 - updateUserStatus\n";
+        result << "  0x8e5e9873 - updateUserName\n\n";
+    
+        result << "Auth types:\n";
+        result << "  0x05162463 - resPQ\n";
+        result << "  0xf35c6d01 - rpc_result\n";
+        result << "  0x2144ca19 - rpc_error\n\n";
+    
+        result << "Container types:\n";
+        result << "  0x1cb5c415 - vector\n";
+        result << "  0x3072cfa1 - gzip_packed\n";
+        result << "  0x73f1f8dc - msg_container\n\n";
+    
+        result << "Note: TDLib supports ALL telegram_api constructors (1000+ types).\n";
+        result << "This is just a small sample. Use tdlib_identify_constructor() to identify any constructor.\n";
+    
+        PG_RETURN_TEXT_P(cstring_to_text(result.str().c_str()));
+    }
+    
+    /*
+     * tdlib_version - Return TDLib parser version info
+     */
+    Datum
+    tdlib_version(PG_FUNCTION_ARGS)
+    {
+        td::JsonBuilder json;
+        auto obj = json.enter_object();
+        obj("extension", "pg_tdlib_parser");
+        obj("version", "1.0.0");
+        obj("tdlib_integration", true);
+        obj("supported_schemas", td::JsonArray({
+            td::JsonString("telegram_api"),
+            td::JsonString("td_api"),
+            td::JsonString("mtproto_api")
+        }));
+        obj("features", td::JsonArray({
+            td::JsonString("Full TL schema support"),
+            td::JsonString("Automatic type detection"),
+            td::JsonString("Gzip decompression"),
+            td::JsonString("All telegram_api types"),
+            td::JsonString("All td_api types"),
+            td::JsonString("All mtproto_api types"),
+            td::JsonString("Polymorphic parsing"),
+            td::JsonString("Nested object support"),
+            td::JsonString("Vector/array support")
+        }));
+    
+        std::string json_str = json.string_builder().as_cslice().str();
+        Datum json_datum = CStringGetDatum(json_str.c_str());
+        PG_RETURN_DATUM(DirectFunctionCall1(jsonb_in, json_datum));
+    }
+    
+    } // extern "C"
