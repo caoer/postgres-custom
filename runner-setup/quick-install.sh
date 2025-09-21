@@ -56,6 +56,7 @@ GITHUB_REPO=""
 RUNNER_TOKEN=""
 RUNNER_NAME=""
 AUTO_TOKEN=false
+ENABLE_SUDO=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -79,10 +80,14 @@ while [[ $# -gt 0 ]]; do
             AUTO_TOKEN=true
             shift
             ;;
+        -s|--sudo)
+            ENABLE_SUDO=true
+            shift
+            ;;
         -h|--help)
             echo "Quick GitHub Actions Runner Installation"
             echo ""
-            echo "Usage: $0 -o OWNER -r REPO [-t TOKEN | --auto-token] [-n NAME]"
+            echo "Usage: $0 -o OWNER -r REPO [-t TOKEN | --auto-token] [-n NAME] [-s]"
             echo ""
             echo "Options:"
             echo "  -o, --org OWNER     GitHub repository owner (required)"
@@ -90,6 +95,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -t, --token TOKEN   Runner registration token"
             echo "  --auto-token        Automatically get token using gh CLI"
             echo "  -n, --name NAME     Runner name (default: hostname)"
+            echo "  -s, --sudo          Enable sudo access for runner (internal use)"
             echo ""
             echo "Examples:"
             echo "  # With manual token:"
@@ -100,6 +106,9 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "  # One-liner with curl:"
             echo "  curl -sL https://raw.githubusercontent.com/caoer/postgres-custom/main/runner-setup/quick-install.sh | sudo bash -s -- -o caoer -r postgres-custom --auto-token"
+            echo ""
+            echo "  # With sudo access (for internal use):"
+            echo "  curl -sL https://raw.githubusercontent.com/caoer/postgres-custom/main/runner-setup/quick-install.sh | sudo bash -s -- -o caoer -r postgres-custom --auto-token -s"
             exit 0
             ;;
         *)
@@ -137,6 +146,9 @@ chmod +x /tmp/install-runner.sh
 ARGS="-o $GITHUB_OWNER -r $GITHUB_REPO -t $RUNNER_TOKEN"
 if [ -n "$RUNNER_NAME" ]; then
     ARGS="$ARGS -n $RUNNER_NAME"
+fi
+if [ "$ENABLE_SUDO" = true ]; then
+    ARGS="$ARGS -s"
 fi
 
 print_message "$YELLOW" "Running installation script..."

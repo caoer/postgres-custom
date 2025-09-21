@@ -30,6 +30,7 @@ export INSTALL_AS_SERVICE=true  # Install as systemd service
 # Security Settings
 export ALLOW_RUNASROOT=false    # Allow runner to run as root (not recommended)
 export DISABLE_UPDATE=false     # Disable automatic runner updates
+export ENABLE_SUDO=false        # Grant sudo access to runner user (for internal use only)
 
 # Network Settings (for proxy environments)
 export HTTP_PROXY=""

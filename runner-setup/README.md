@@ -26,6 +26,14 @@ curl -sL https://raw.githubusercontent.com/caoer/postgres-custom/main/runner-set
   sudo bash -s -- -o caoer -r postgres-custom -t YOUR_TOKEN -n my-runner
 ```
 
+### Option 3: With sudo access (for internal use)
+For internal deployments where the runner needs administrative privileges:
+```bash
+curl -sL https://raw.githubusercontent.com/caoer/postgres-custom/main/runner-setup/quick-install.sh | \
+  sudo bash -s -- -o caoer -r postgres-custom --auto-token -n my-runner -s
+```
+**⚠️ Warning:** Enabling sudo access grants the runner user passwordless administrative privileges. Only use this for trusted internal deployments.
+
 ## Manual Installation
 
 1. Clone this repository:
@@ -64,6 +72,7 @@ sudo ./install-runner.sh -o caoer -r postgres-custom -t YOUR_TOKEN -n my-runner
 | `-l, --labels LABELS` | Runner labels | self-hosted,Linux,X64 |
 | `-u, --user USER` | System user for runner | runner |
 | `-v, --version VERSION` | Runner version | 2.321.0 |
+| `-s, --sudo` | Enable sudo access for runner user | false |
 | `-h, --help` | Show help message | - |
 
 ### quick-install.sh Options
@@ -75,6 +84,7 @@ sudo ./install-runner.sh -o caoer -r postgres-custom -t YOUR_TOKEN -n my-runner
 | `-t, --token TOKEN` | Runner registration token |
 | `--auto-token` | Automatically get token using gh CLI |
 | `-n, --name NAME` | Runner name |
+| `-s, --sudo` | Enable sudo access for runner user |
 | `-h, --help` | Show help message |
 
 ## Requirements
@@ -87,11 +97,12 @@ sudo ./install-runner.sh -o caoer -r postgres-custom -t YOUR_TOKEN -n my-runner
 ## What the Script Does
 
 1. **Creates a dedicated user** for running the GitHub Actions runner
-2. **Downloads** the specified version of GitHub Actions runner
-3. **Configures** the runner with your repository
-4. **Installs** it as a systemd service
-5. **Starts** the service automatically
-6. **Verifies** the installation
+2. **Optionally grants sudo access** to the runner user (when -s flag is used)
+3. **Downloads** the specified version of GitHub Actions runner
+4. **Configures** the runner with your repository
+5. **Installs** it as a systemd service
+6. **Starts** the service automatically
+7. **Verifies** the installation
 
 ## Managing the Runner
 
@@ -168,6 +179,11 @@ jobs:
 - **Regularly update** the runner software
 - **Monitor runner activity** through GitHub's UI
 - **Limit network access** where possible
+- **Sudo access warning**: The `-s` flag grants passwordless sudo access to the runner user. This is convenient for internal use but should **never** be used for:
+  - Public repositories
+  - Untrusted code
+  - Production environments with sensitive data
+  - Multi-tenant environments
 
 ## Advanced Configuration
 

@@ -16,6 +16,7 @@ RUNNER_VERSION="2.321.0"
 RUNNER_USER="runner"
 RUNNER_HOME="/home/${RUNNER_USER}"
 RUNNER_DIR="${RUNNER_HOME}/actions-runner"
+ENABLE_SUDO=false
 
 # Function to print colored messages
 print_message() {
@@ -36,6 +37,7 @@ print_usage() {
     echo "  -l, --labels LABELS    Runner labels (default: self-hosted,Linux,X64)"
     echo "  -u, --user USER        Runner user (default: runner)"
     echo "  -v, --version VERSION  Runner version (default: 2.321.0)"
+    echo "  -s, --sudo             Enable sudo access for runner user (for internal use)"
     echo "  -h, --help            Show this help message"
     echo ""
     echo "Example:"
@@ -74,6 +76,10 @@ while [[ $# -gt 0 ]]; do
         -v|--version)
             RUNNER_VERSION="$2"
             shift 2
+            ;;
+        -s|--sudo)
+            ENABLE_SUDO=true
+            shift
             ;;
         -h|--help)
             print_usage
@@ -114,6 +120,7 @@ echo "  Runner Name: ${RUNNER_NAME}"
 echo "  Runner Labels: ${RUNNER_LABELS}"
 echo "  Runner User: ${RUNNER_USER}"
 echo "  Runner Version: ${RUNNER_VERSION}"
+echo "  Sudo Access: ${ENABLE_SUDO}"
 echo ""
 
 # Step 1: Create runner user
@@ -125,14 +132,35 @@ else
     print_message "$GREEN" "  User ${RUNNER_USER} created"
 fi
 
-# Step 2: Install dependencies
-print_message "$YELLOW" "Step 2: Installing dependencies..."
+# Step 2: Configure sudo access if requested
+if [ "$ENABLE_SUDO" = true ]; then
+    print_message "$YELLOW" "Step 2: Configuring sudo access for ${RUNNER_USER}..."
+    
+    # Create sudoers file for runner user
+    SUDOERS_FILE="/etc/sudoers.d/${RUNNER_USER}"
+    echo "# GitHub Actions runner sudo access (for internal use)" > "$SUDOERS_FILE"
+    echo "${RUNNER_USER} ALL=(ALL) NOPASSWD:ALL" >> "$SUDOERS_FILE"
+    
+    # Set proper permissions
+    chmod 0440 "$SUDOERS_FILE"
+    
+    # Verify sudoers file
+    if visudo -c -f "$SUDOERS_FILE" > /dev/null 2>&1; then
+        print_message "$GREEN" "  Sudo access granted to ${RUNNER_USER}"
+    else
+        print_message "$RED" "  Warning: Failed to configure sudo access"
+        rm -f "$SUDOERS_FILE"
+    fi
+fi
+
+# Step 3: Install dependencies
+print_message "$YELLOW" "Step 3: Installing dependencies..."
 apt-get update -qq
 apt-get install -qq -y curl tar gzip sudo > /dev/null 2>&1
 print_message "$GREEN" "  Dependencies installed"
 
-# Step 3: Download and extract runner
-print_message "$YELLOW" "Step 3: Downloading GitHub Actions Runner v${RUNNER_VERSION}..."
+# Step 4: Download and extract runner
+print_message "$YELLOW" "Step 4: Downloading GitHub Actions Runner v${RUNNER_VERSION}..."
 mkdir -p "$RUNNER_DIR"
 cd "$RUNNER_DIR"
 
@@ -144,13 +172,13 @@ else
     print_message "$GREEN" "  Runner already downloaded"
 fi
 
-print_message "$YELLOW" "Step 4: Extracting runner..."
+print_message "$YELLOW" "Step 5: Extracting runner..."
 tar xzf "./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 chown -R "${RUNNER_USER}:${RUNNER_USER}" "$RUNNER_DIR"
 print_message "$GREEN" "  Runner extracted"
 
-# Step 5: Configure runner
-print_message "$YELLOW" "Step 5: Configuring runner..."
+# Step 6: Configure runner
+print_message "$YELLOW" "Step 6: Configuring runner..."
 REPO_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
 
 # Remove any existing runner with same name
@@ -167,19 +195,19 @@ su - "$RUNNER_USER" -c "cd $RUNNER_DIR && ./config.sh \
 
 print_message "$GREEN" "  Runner configured"
 
-# Step 6: Install and start service
-print_message "$YELLOW" "Step 6: Installing runner as service..."
+# Step 7: Install and start service
+print_message "$YELLOW" "Step 7: Installing runner as service..."
 cd "$RUNNER_DIR"
 ./svc.sh install "$RUNNER_USER"
 print_message "$GREEN" "  Service installed"
 
-print_message "$YELLOW" "Step 7: Starting runner service..."
+print_message "$YELLOW" "Step 8: Starting runner service..."
 ./svc.sh start
 sleep 2
 print_message "$GREEN" "  Service started"
 
-# Step 8: Check status
-print_message "$YELLOW" "Step 8: Checking runner status..."
+# Step 9: Check status
+print_message "$YELLOW" "Step 9: Checking runner status..."
 if ./svc.sh status | grep -q "active (running)"; then
     print_message "$GREEN" "  Runner is active and running!"
 else
@@ -198,6 +226,9 @@ echo "  Name: ${RUNNER_NAME}"
 echo "  User: ${RUNNER_USER}"
 echo "  Directory: ${RUNNER_DIR}"
 echo "  Service: actions.runner.${GITHUB_OWNER}-${GITHUB_REPO}.${RUNNER_NAME}"
+if [ "$ENABLE_SUDO" = true ]; then
+    echo "  Sudo Access: ENABLED (passwordless)"
+fi
 echo ""
 echo "Useful commands:"
 echo "  Check status:  cd ${RUNNER_DIR} && sudo ./svc.sh status"
