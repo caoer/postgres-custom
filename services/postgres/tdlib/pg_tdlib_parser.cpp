@@ -670,7 +670,7 @@
         auto obj = json.enter_object();
         obj("extension", "pg_tdlib_parser");
         obj("version", "1.0.0");
-        obj("tdlib_integration", true);
+        obj("tdlib_integration", td::JsonBool(true));
         obj("supported_schemas", td::JsonArray({
             td::JsonString("telegram_api"),
             td::JsonString("td_api"),
