@@ -33,6 +33,7 @@ override PG_CXXFLAGS = -std=c++14 -fPIC -Wall -Wextra \
     -I/tdlib/tdutils \
     -I/tdlib/td \
     -I/tdlib/build \
+    -I/tdlib/build/tdutils \
     -DHAVE_CONFIG_H
 
 # PostgreSQL configuration
