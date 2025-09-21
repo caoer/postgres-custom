@@ -68,6 +68,13 @@ COPY tdlib/pg_tdlib_parser.control ./
 COPY tdlib/pg_tdlib_parser--1.0.sql ./
 COPY tdlib/Makefile ./
 
+# Debug: Find tl_json.h
+RUN echo "Searching for tl_json.h:" && \
+    find /tdlib -name "tl_json.h" 2>/dev/null || echo "Not found in /tdlib" && \
+    find /usr/local -name "tl_json.h" 2>/dev/null || echo "Not found in /usr/local" && \
+    echo "Contents of /tdlib/td:" && \
+    ls -la /tdlib/td/ | head -20
+
 # Build the extension
 RUN make PG_CONFIG=/usr/bin/pg_config && \
     make install PG_CONFIG=/usr/bin/pg_config
