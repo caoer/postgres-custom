@@ -51,7 +51,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-tdlib
           flavor: |
-            suffix=-amd64
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -72,7 +71,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           provenance: false
 
   build-timescaledb:
@@ -99,7 +98,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-timescaledb
           flavor: |
-            suffix=-amd64
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -120,7 +118,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           provenance: false
 
   build-full:
@@ -147,7 +145,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/postgres-full
           flavor: |
-            suffix=-amd64
           tags: |
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
@@ -168,5 +165,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           provenance: false
