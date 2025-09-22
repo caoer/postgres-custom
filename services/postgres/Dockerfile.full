@@ -1,34 +1,24 @@
-# Build stage for pgx_ulid extension
-FROM postgres:17-bookworm AS builder
+# Build stage for pg-mtcute-c extension
+FROM postgres:17-bookworm AS pg-mtcute-builder
 
-# Install build dependencies and PostgreSQL dev headers
+# Install required tools
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
     curl \
-    pkg-config \
-    libssl-dev \
-    clang \
-    postgresql-server-dev-17 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Clone pgx_ulid extension
+# Create temporary directory
 WORKDIR /tmp
-RUN git clone https://github.com/pksunkara/pgx_ulid.git
-WORKDIR /tmp/pgx_ulid
 
-# Install cargo-pgrx (matching version with pgx_ulid requirements)
-RUN cargo install cargo-pgrx --version "0.16.0" --locked
-RUN cargo pgrx init --pg17 $(which pg_config)
+# Download pre-built pg-mtcute-c artifact from GitHub Actions
+# Using the x86_64 artifact for AMD64 architecture
+RUN curl -L -o pg-mtcute-c.tar.gz \
+    "https://github.com/caoer/mtcute/releases/download/v0.27.0-pg-c/pg_mtcute-x86_64.tar.gz"
 
-# Build the extension for PostgreSQL 17
-RUN cargo pgrx package --pg-config $(which pg_config)
+# Extract the extension files
+RUN tar -xzf pg-mtcute-c.tar.gz
 
-# Final stage - PostgreSQL 17 with TimescaleDB and ULID extensions
+# Final stage - PostgreSQL 17 with TimescaleDB and pg-mtcute-c extensions
 FROM postgres:17-bookworm
 
 # Install dependencies for TimescaleDB
@@ -48,13 +38,14 @@ RUN apt-get update && apt-get install -y \
     timescaledb-2-postgresql-17 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the built ULID extension files from the builder stage
-COPY --from=builder /tmp/pgx_ulid/target/release/pgx_ulid-pg17/usr/share/postgresql/17/extension/* /usr/share/postgresql/17/extension/
-COPY --from=builder /tmp/pgx_ulid/target/release/pgx_ulid-pg17/usr/lib/postgresql/17/lib/* /usr/lib/postgresql/17/lib/
+# Copy pg-mtcute-c extension files from builder stage
+COPY --from=pg-mtcute-builder /tmp/pg_mtcute.control /usr/share/postgresql/17/extension/
+COPY --from=pg-mtcute-builder /tmp/pg_mtcute--1.0.sql /usr/share/postgresql/17/extension/
+COPY --from=pg-mtcute-builder /tmp/pg_mtcute.so /usr/lib/postgresql/17/lib/
 
-# Create initialization script to install both extensions
+# Create initialization script to install extensions
 RUN echo "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;" > /docker-entrypoint-initdb.d/01-timescaledb.sql && \
-    echo "CREATE EXTENSION IF NOT EXISTS pgx_ulid;" > /docker-entrypoint-initdb.d/02-ulid.sql
+    echo "CREATE EXTENSION IF NOT EXISTS pg_mtcute;" > /docker-entrypoint-initdb.d/02-pg-mtcute.sql
 
 # Configure PostgreSQL for TimescaleDB
 # Note: timescaledb-tune requires a running database, so we configure manually

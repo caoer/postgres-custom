@@ -1,0 +1,26 @@
+# Build stage for pg-mtcute-c extension
+FROM postgres:17-bookworm AS pg-mtcute-builder
+
+# Install required tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create temporary directory
+WORKDIR /tmp
+
+# Download pre-built pg-mtcute-c artifact from GitHub Actions
+# Using the x86_64 artifact for AMD64 architecture
+RUN curl -L -o pg-mtcute-c.tar.gz \
+    "https://github.com/caoer/mtcute/releases/download/v0.27.0-pg-c/pg_mtcute-x86_64.tar.gz"
+
+# Extract the extension files
+RUN tar -xzf pg-mtcute-c.tar.gz
+
+# Files should now be available:
+# - pg_mtcute.control
+# - pg_mtcute--1.0.sql
+# - pg_mtcute.so
+
+# The files are ready to be copied in the main Dockerfile
