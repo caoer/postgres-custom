@@ -14,10 +14,10 @@ WORKDIR /tmp
 ARG TARGETARCH
 RUN if [ "${TARGETARCH}" = "arm64" ]; then \
         curl -L -o pg-mtcute-c.tar.gz \
-            "https://github.com/caoer/mtcute/releases/download/v0.27.0-pg-c/pg_mtcute-aarch64.tar.gz"; \
+            "https://github.com/caoer/mtcute/releases/download/v.0.27.0-pg-c/pg_mtcute-aarch64.tar.gz"; \
     else \
         curl -L -o pg-mtcute-c.tar.gz \
-            "https://github.com/caoer/mtcute/releases/download/v0.27.0-pg-c/pg_mtcute-x86_64.tar.gz"; \
+            "https://github.com/caoer/mtcute/releases/download/v.0.27.0-pg-c/pg_mtcute-x86_64.tar.gz"; \
     fi
 
 # Extract the extension files
