@@ -55,6 +55,7 @@ jobs:
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
             type=sha,prefix={{branch}}-
+            type=sha,prefix=17-{{branch}}-
             type=ref,event=branch
             type=ref,event=pr
 
@@ -102,6 +103,7 @@ jobs:
             type=raw,value=${{ github.event.inputs.tag || 'latest' }}
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
             type=sha,prefix={{branch}}-
+            type=sha,prefix=17-{{branch}}-
             type=ref,event=branch
             type=ref,event=pr
 
