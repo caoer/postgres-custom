@@ -1,5 +1,5 @@
 # Build stage for pg-mtcute-c extension
-FROM postgres:17-bookworm AS pg-mtcute-builder
+FROM ghcr.io/cloudnative-pg/postgresql:17 AS pg-mtcute-builder
 
 # Install required tools
 RUN apt-get update && apt-get install -y \
@@ -24,7 +24,7 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then \
 RUN tar -xzf pg-mtcute-c.tar.gz
 
 # Final stage - PostgreSQL 17 with TimescaleDB and pg-mtcute-c extensions
-FROM postgres:17-bookworm
+FROM ghcr.io/cloudnative-pg/postgresql:17
 
 # Install dependencies for TimescaleDB
 RUN apt-get update && apt-get install -y \
