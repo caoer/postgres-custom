@@ -54,12 +54,7 @@ COPY --from=pg-mtcute-builder /tmp/pg_mtcute.control /usr/share/postgresql/17/ex
 COPY --from=pg-mtcute-builder /tmp/pg_mtcute--1.0.sql /usr/share/postgresql/17/extension/
 COPY --from=pg-mtcute-builder /tmp/pg_mtcute.so /usr/lib/postgresql/17/lib/
 
-# Create initialization script to install extensions
-RUN echo "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;" > /docker-entrypoint-initdb.d/01-timescaledb.sql && \
-    echo "CREATE EXTENSION IF NOT EXISTS pg_mtcute;" > /docker-entrypoint-initdb.d/02-pg-mtcute.sql
-
-# Configure PostgreSQL for TimescaleDB
-# Note: timescaledb-tune requires a running database, so we configure manually
+# Configure PostgreSQL for TimescaleDB (CNPG reads from postgresql.conf.sample)
 RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample && \
     echo "# TimescaleDB configuration" >> /usr/share/postgresql/postgresql.conf.sample && \
     echo "max_worker_processes = 32" >> /usr/share/postgresql/postgresql.conf.sample && \
@@ -68,7 +63,3 @@ RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/pos
 
 # Switch back to postgres user (CNPG requirement)
 USER 26
-
-# Health check
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-  CMD pg_isready -U postgres || exit 1
