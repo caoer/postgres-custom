@@ -1,5 +1,5 @@
-# Build stage for pg-mtcute-c extension
-FROM ghcr.io/cloudnative-pg/postgresql:17 AS pg-mtcute-builder
+# Build stage for pg-mtcute-c and pgvector extensions
+FROM ghcr.io/cloudnative-pg/postgresql:17 AS extension-builder
 
 # Switch to root for package installation
 USER root
@@ -8,6 +8,9 @@ USER root
 RUN apt-get update && apt-get install -y \
     curl \
     unzip \
+    git \
+    build-essential \
+    postgresql-server-dev-17 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create temporary directory
@@ -26,7 +29,13 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then \
 # Extract the extension files
 RUN tar -xzf pg-mtcute-c.tar.gz
 
-# Final stage - PostgreSQL 17 with TimescaleDB and pg-mtcute-c extensions
+# Build pgvector extension
+WORKDIR /tmp/pgvector
+RUN git clone --branch v0.8.1 https://github.com/pgvector/pgvector.git . && \
+    make && \
+    make install
+
+# Final stage - PostgreSQL 17 with TimescaleDB, pg-mtcute-c, and pgvector extensions
 FROM ghcr.io/cloudnative-pg/postgresql:17
 
 # Switch to root for package installation
@@ -50,9 +59,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy pg-mtcute-c extension files from builder stage
-COPY --from=pg-mtcute-builder /tmp/pg_mtcute.control /usr/share/postgresql/17/extension/
-COPY --from=pg-mtcute-builder /tmp/pg_mtcute--1.0.sql /usr/share/postgresql/17/extension/
-COPY --from=pg-mtcute-builder /tmp/pg_mtcute.so /usr/lib/postgresql/17/lib/
+COPY --from=extension-builder /tmp/pg_mtcute.control /usr/share/postgresql/17/extension/
+COPY --from=extension-builder /tmp/pg_mtcute--1.0.sql /usr/share/postgresql/17/extension/
+COPY --from=extension-builder /tmp/pg_mtcute.so /usr/lib/postgresql/17/lib/
+
+# Copy pgvector extension files from builder stage
+COPY --from=extension-builder /usr/share/postgresql/17/extension/vector* /usr/share/postgresql/17/extension/
+COPY --from=extension-builder /usr/lib/postgresql/17/lib/vector.so /usr/lib/postgresql/17/lib/
 
 # Configure PostgreSQL for TimescaleDB (CNPG reads from postgresql.conf.sample)
 RUN echo "shared_preload_libraries = 'timescaledb'" >> /usr/share/postgresql/postgresql.conf.sample && \
